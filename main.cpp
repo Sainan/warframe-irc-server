@@ -4,7 +4,9 @@
 #include <HttpRequestTask.hpp>
 #include <IrcServer.hpp>
 #include <pem.hpp>
+#include <ServerWebService.hpp>
 #include <Socket.hpp>
+#include <urlenc.hpp>
 #include <X509Certchain.hpp>
 
 using namespace soup;
@@ -177,6 +179,43 @@ QJg24g1I/Zb4EUJmo2WNBzGS
 		return 1;
 	}
 	std::cout << "Listening on port 6699\n";
+
+	ServerWebService web_srv([](soup::Socket& s, soup::HttpRequest&& req, soup::ServerWebService&)
+	{
+		if (!s.peer.ip.isLoopback())
+		{
+			ServerWebService::sendText(s, "This service is available via loopback only.");
+			return;
+		}
+
+		if (req.path == "/")
+		{
+			ServerWebService::sendHtml(s, R"EOC(<p>Send redtext</p>
+<input type="text" />
+<input type="submit" onclick="sendRedtext();" />
+<script>
+	function sendRedtext() {
+		fetch("/redtext?" + encodeURIComponent(document.querySelector("input[type=text]").value));
+	}
+</script>)EOC");
+		}
+		else if (req.path.substr(0, 9) == "/redtext?")
+		{
+			std::string msg = ":Soup WALLOPS :";
+			msg.append(urlenc::decode(req.path.substr(9)));
+			msg.append("\r\n");
+			static_cast<IrcServer*>(Scheduler::get())->broadcast(msg);
+		}
+		else
+		{
+			ServerWebService::send404(s);
+		}
+	});
+	if (serv.bind(6688, &web_srv))
+	{
+		std::cout << "Management interface available at http://localhost:6688 (loopback only)" << std::endl;
+	}
+
 	serv.run();
 	return 0;
 }
