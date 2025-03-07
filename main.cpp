@@ -1,12 +1,40 @@
 #include <iostream>
 
 #include <CertStore.hpp>
+#include <HttpRequestTask.hpp>
 #include <IrcServer.hpp>
 #include <pem.hpp>
 #include <Socket.hpp>
 #include <X509Certchain.hpp>
 
 using namespace soup;
+
+struct VerifyCredsTask : public soup::Task
+{
+	SharedPtr<Worker> s;
+	HttpRequestTask hrt;
+
+	VerifyCredsTask(Socket& _s, HttpRequest&& hr)
+		: s(Scheduler::get()->getShared(_s)), hrt(std::move(hr))
+	{
+	}
+
+	void onTick()
+	{
+		if (static_cast<Socket*>(s.get())->isWorkDoneOrClosed())
+		{
+			setWorkDone();
+		}
+		else if (hrt.tickUntilDone())
+		{
+			if (hrt.result.has_value() && hrt.result->status_code == 200)
+			{
+				static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Congrats, you have a valid accountId and nonce.\r\n");
+			}
+			setWorkDone();
+		}
+	}
+};
 
 struct LoggingIrcServer : public soup::IrcServer
 {
@@ -24,6 +52,20 @@ struct LoggingIrcServer : public soup::IrcServer
 	void onClientLineReceived(Socket& s, const std::string& line) final
 	{
 		std::cout << s.toString() << " | " << line << "\n";
+		if (line.substr(0, 4) == "USER" && line.size() > 42
+			&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
+			)
+		{
+			std::string path = "/api/credits.php?accountId=";
+			path.append(line.substr(5, 24));
+			path.append("&nonce=");
+			path.append(line.substr(42));
+
+			HttpRequest hr("localhost", std::move(path));
+			hr.port = 80;
+			hr.use_tls = false;
+			this->add<VerifyCredsTask>(s, std::move(hr));
+		}
 	}
 };
 
