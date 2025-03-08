@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <CertStore.hpp>
+#include <console.hpp>
 #include <HttpRequestTask.hpp>
 #include <IrcServer.hpp>
 #include <pem.hpp>
@@ -73,6 +74,8 @@ struct LoggingIrcServer : public soup::IrcServer
 
 int main()
 {
+	soup::console.init(false);
+
 	LoggingIrcServer serv;
 	auto certstore = soup::make_shared<soup::CertStore>();
 	soup::X509Certchain certchain;
