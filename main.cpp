@@ -4,6 +4,7 @@
 #include <console.hpp>
 #include <HttpRequestTask.hpp>
 #include <IrcServer.hpp>
+#include <json.hpp>
 #include <pem.hpp>
 #include <ServerWebService.hpp>
 #include <Socket.hpp>
@@ -11,6 +12,11 @@
 #include <X509Certchain.hpp>
 
 using namespace soup;
+
+struct AuthenticatedUserData
+{
+	std::string guildId;
+};
 
 struct VerifyCredsTask : public soup::Task
 {
@@ -30,9 +36,22 @@ struct VerifyCredsTask : public soup::Task
 		}
 		else if (hrt.tickUntilDone())
 		{
-			if (hrt.result.has_value() && hrt.result->status_code == 200)
+			if (hrt.result.has_value())
 			{
-				static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Congrats, you have a valid accountId and nonce.\r\n");
+				if (hrt.result->status_code == 200)
+				{
+					AuthenticatedUserData aud;
+					if (auto jr = json::decode(hrt.result->body); jr && jr->isObj())
+					{
+						aud.guildId = jr->reinterpretAsObj().at("_id").asObj().at("$oid").asStr();
+					}
+					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
+					static_cast<Socket*>(s.get())->custom_data.addStructToMap(AuthenticatedUserData, std::move(aud));
+				}
+				else
+				{
+					static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Failed to validate your credentials (accountId-nonce pair).\r\n");
+				}
 			}
 			setWorkDone();
 		}
@@ -59,7 +78,7 @@ struct LoggingIrcServer : public soup::IrcServer
 			&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
 			)
 		{
-			std::string path = "/api/credits.php?accountId=";
+			std::string path = "/api/getGuild.php?accountId=";
 			path.append(line.substr(5, 24));
 			path.append("&nonce=");
 			path.append(line.substr(42));
@@ -68,6 +87,15 @@ struct LoggingIrcServer : public soup::IrcServer
 			hr.port = 80;
 			hr.use_tls = false;
 			this->add<VerifyCredsTask>(s, std::move(hr));
+		}
+	}
+
+	void onClientJoinedChannel(Socket& s, const std::string& channel_name, IrcChannelMembershipData& md)
+	{
+		if (channel_name.substr(0, 2) == "#C")
+		{
+			md.op = (s.custom_data.isStructInMap(AuthenticatedUserData) && channel_name.substr(2) == s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildId);
+			std::cout << "Adjusting oper for user in " << channel_name << ": " << md.op << std::endl;
 		}
 	}
 };
