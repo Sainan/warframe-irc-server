@@ -204,12 +204,17 @@ QJg24g1I/Zb4EUJmo2WNBzGS
 -----END PRIVATE KEY-----
 )EOC");
 	certstore->add(std::move(certchain), std::move(private_key));
-	if (!serv.bindCrypto(6699, &serv.srv, std::move(certstore)))
+	if (!serv.bindCrypto(6695, &serv.srv, certstore)
+		|| !serv.bindCrypto(6696, &serv.srv, certstore)
+		|| !serv.bindCrypto(6697, &serv.srv, certstore)
+		|| !serv.bindCrypto(6698, &serv.srv, certstore)
+		|| !serv.bindCrypto(6699, &serv.srv, certstore)
+		)
 	{
-		std::cout << "Failed to bind to port 6699\n";
+		std::cout << "Failed to bind to ports 6695-6699\n";
 		return 1;
 	}
-	std::cout << "Listening on port 6699\n";
+	std::cout << "Listening on ports 6695-6699\n";
 
 	ServerWebService web_srv([](soup::Socket& s, soup::HttpRequest&& req, soup::ServerWebService&)
 	{
