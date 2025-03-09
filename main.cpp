@@ -15,6 +15,8 @@ using namespace soup;
 
 struct AuthenticatedUserData
 {
+	std::string accountId;
+	std::string nonce;
 	std::string guildId;
 };
 
@@ -22,10 +24,25 @@ struct VerifyCredsTask : public soup::Task
 {
 	SharedPtr<Worker> s;
 	HttpRequestTask hrt;
+	std::string accountId;
+	std::string nonce;
 
-	VerifyCredsTask(Socket& _s, HttpRequest&& hr)
-		: s(Scheduler::get()->getShared(_s)), hrt(std::move(hr))
+	VerifyCredsTask(Socket& _s, std::string&& accountId, std::string&& nonce)
+		: s(Scheduler::get()->getShared(_s)), hrt(buildRequest(accountId, nonce)), accountId(std::move(accountId)), nonce(std::move(nonce))
 	{
+	}
+
+	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
+	{
+		std::string path = "/api/getGuild.php?accountId=";
+		path.append(accountId);
+		path.append("&nonce=");
+		path.append(nonce);
+
+		HttpRequest hr("localhost", std::move(path));
+		hr.port = 80;
+		hr.use_tls = false;
+		return hr;
 	}
 
 	void onTick()
@@ -40,7 +57,7 @@ struct VerifyCredsTask : public soup::Task
 			{
 				if (hrt.result->status_code == 200)
 				{
-					AuthenticatedUserData aud;
+					AuthenticatedUserData aud{ std::move(accountId), std::move(nonce) };
 					if (auto jr = json::decode(hrt.result->body); jr && jr->isObj())
 					{
 						aud.guildId = jr->reinterpretAsObj().at("_id").asObj().at("$oid").asStr();
@@ -58,6 +75,37 @@ struct VerifyCredsTask : public soup::Task
 	}
 };
 
+struct ReportDropTask : public soup::Task
+{
+	HttpRequestTask hrt;
+
+	ReportDropTask(const AuthenticatedUserData& aud)
+		: hrt(buildRequest(aud.accountId, aud.nonce))
+	{
+	}
+
+	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
+	{
+		std::string path = "/custom/ircDropped?accountId=";
+		path.append(accountId);
+		path.append("&nonce=");
+		path.append(nonce);
+
+		HttpRequest hr("localhost", std::move(path));
+		hr.port = 80;
+		hr.use_tls = false;
+		return hr;
+	}
+
+	void onTick()
+	{
+		if (hrt.tickUntilDone())
+		{
+			setWorkDone();
+		}
+	}
+};
+
 struct LoggingIrcServer : public soup::IrcServer
 {
 	void onClientConnected(Socket& s) final
@@ -69,6 +117,10 @@ struct LoggingIrcServer : public soup::IrcServer
 	void onClientDisconnected(Socket& s) final
 	{
 		std::cout << s.toString() << " has disconnected\n";
+		if (s.custom_data.isStructInMap(AuthenticatedUserData))
+		{
+			this->add<ReportDropTask>(s.custom_data.getStructFromMapConst(AuthenticatedUserData));
+		}
 	}
 
 	void onClientLineReceived(Socket& s, const std::string& line) final
@@ -78,15 +130,7 @@ struct LoggingIrcServer : public soup::IrcServer
 			&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
 			)
 		{
-			std::string path = "/api/getGuild.php?accountId=";
-			path.append(line.substr(5, 24));
-			path.append("&nonce=");
-			path.append(line.substr(42));
-
-			HttpRequest hr("localhost", std::move(path));
-			hr.port = 80;
-			hr.use_tls = false;
-			this->add<VerifyCredsTask>(s, std::move(hr));
+			this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(42));
 		}
 	}
 
