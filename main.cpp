@@ -38,6 +38,7 @@ struct VerifyCredsTask : public soup::Task
 		path.append(accountId);
 		path.append("&nonce=");
 		path.append(nonce);
+		path.append("&ct=IRC");
 
 		HttpRequest hr("localhost", std::move(path));
 		hr.port = 80;
@@ -90,6 +91,7 @@ struct ReportDropTask : public soup::Task
 		path.append(accountId);
 		path.append("&nonce=");
 		path.append(nonce);
+		path.append("&ct=IRC");
 
 		HttpRequest hr("localhost", std::move(path));
 		hr.port = 80;
