@@ -61,7 +61,10 @@ struct VerifyCredsTask : public soup::Task
 					AuthenticatedUserData aud{ std::move(accountId), std::move(nonce) };
 					if (auto jr = json::decode(hrt.result->body); jr && jr->isObj())
 					{
-						aud.guildId = jr->reinterpretAsObj().at("_id").asObj().at("$oid").asStr();
+						if (auto _id = jr->reinterpretAsObj().find("_id"))
+						{
+							aud.guildId = _id->asObj().at("$oid").asStr();
+						}
 					}
 					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
 					static_cast<Socket*>(s.get())->custom_data.addStructToMap(AuthenticatedUserData, std::move(aud));
