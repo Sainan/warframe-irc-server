@@ -67,6 +67,25 @@ struct VerifyCredsTask : public soup::Task
 						}
 					}
 					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
+					if (!aud.guildId.empty())
+					{
+						auto& cd = static_cast<Socket*>(s.get())->custom_data.getStructFromMap(IrcClientData);
+						if (auto membership = cd.getMembership("#C" + aud.guildId))
+						{
+							std::cout << "Client had already joined guild channel, giving oper" << std::endl;
+							membership->op = true;
+
+							std::string msg = ":Soup MODE #C";
+							msg.append(aud.guildId);
+							msg.append(" +o ");
+							msg.append(cd.nick);
+							msg.append("\r\n");
+							for (const auto& member : static_cast<IrcServer*>(Scheduler::get())->getChannelMembers("#C" + aud.guildId))
+							{
+								member.socket->send(msg);
+							}
+						}
+					}
 					static_cast<Socket*>(s.get())->custom_data.addStructToMap(AuthenticatedUserData, std::move(aud));
 				}
 				else
