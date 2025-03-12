@@ -187,6 +187,10 @@ struct LoggingIrcServer : public soup::IrcServer
 				);
 			std::cout << "Adjusting oper for user in " << channel_name << ": " << md.op << std::endl;
 		}
+		else
+		{
+			md.op = false;
+		}
 	}
 };
 
