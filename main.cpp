@@ -18,6 +18,7 @@ struct AuthenticatedUserData
 	std::string accountId;
 	std::string nonce;
 	std::string guildId;
+	bool guildChatModerator;
 };
 
 struct VerifyCredsTask : public soup::Task
@@ -64,10 +65,21 @@ struct VerifyCredsTask : public soup::Task
 						if (auto _id = jr->reinterpretAsObj().find("_id"))
 						{
 							aud.guildId = _id->asObj().at("$oid").asStr();
+
+							int64_t permissions = 0;
+							for (const auto& member : jr->reinterpretAsObj().at("Members").asArr())
+							{
+								if (member.asObj().at("_id").asObj().at("$oid").asStr() == aud.accountId)
+								{
+									auto rank = member.asObj().at("Rank").asInt();
+									permissions = jr->reinterpretAsObj().at("Ranks").asArr().at(rank).asObj().at("Permissions").asInt();
+								}
+							}
+							aud.guildChatModerator = (permissions & 512);
 						}
 					}
 					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
-					if (!aud.guildId.empty())
+					if (!aud.guildId.empty() && aud.guildChatModerator)
 					{
 						auto& cd = static_cast<Socket*>(s.get())->custom_data.getStructFromMap(IrcClientData);
 						if (auto membership = cd.getMembership("#C" + aud.guildId))
@@ -162,7 +174,10 @@ struct LoggingIrcServer : public soup::IrcServer
 	{
 		if (channel_name.substr(0, 2) == "#C")
 		{
-			md.op = (s.custom_data.isStructInMap(AuthenticatedUserData) && channel_name.substr(2) == s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildId);
+			md.op = (s.custom_data.isStructInMap(AuthenticatedUserData)
+				&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
+				&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
+				);
 			std::cout << "Adjusting oper for user in " << channel_name << ": " << md.op << std::endl;
 		}
 	}
