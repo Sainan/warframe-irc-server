@@ -13,6 +13,13 @@
 
 using namespace soup;
 
+static std::string http_host;
+static int16_t http_port;
+static bool http_use_tls;
+
+static int16_t mgmt_port;
+static bool mgmt_loopback_only;
+
 struct AuthenticatedUserData
 {
 	std::string accountId;
@@ -41,9 +48,9 @@ struct VerifyCredsTask : public soup::Task
 		path.append(nonce);
 		path.append("&ct=IRC");
 
-		HttpRequest hr("localhost", std::move(path));
-		hr.port = 80;
-		hr.use_tls = false;
+		HttpRequest hr(http_host, std::move(path));
+		hr.port = http_port;
+		hr.use_tls = http_use_tls;
 		return hr;
 	}
 
@@ -127,9 +134,9 @@ struct ReportDropTask : public soup::Task
 		path.append(nonce);
 		path.append("&ct=IRC");
 
-		HttpRequest hr("localhost", std::move(path));
-		hr.port = 80;
-		hr.use_tls = false;
+		HttpRequest hr(http_host, std::move(path));
+		hr.port = http_port;
+		hr.use_tls = http_use_tls;
 		return hr;
 	}
 
@@ -185,13 +192,36 @@ struct LoggingIrcServer : public soup::IrcServer
 
 int main()
 {
-	soup::console.init(false);
+	try
+	{
+		soup::console.init(false);
 
-	LoggingIrcServer serv;
-	auto certstore = soup::make_shared<soup::CertStore>();
-	soup::X509Certchain certchain;
-	certchain.fromDer({
-		soup::pem::decode(R"EOC(
+		if (!std::filesystem::exists("irc_config.json"))
+		{
+			JsonObject config;
+			config.add("http_host", "localhost");
+			config.add("http_port", 80);
+			config.add("http_use_tls", false);
+			config.add("mgmt_port", 6688);
+			config.add("mgmt_loopback_only", true);
+			soup::string::toFile("irc_config.json", config.encodePretty());
+		}
+
+		{
+			auto jr = json::decode(string::fromFile("irc_config.json"));
+			SOUP_ASSERT(jr);
+			http_host = jr->asObj().at("http_host").asStr().value;
+			http_port = jr->asObj().at("http_port").asInt().value;
+			http_use_tls = jr->asObj().at("http_use_tls").asBool().value;
+			mgmt_port = jr->asObj().at("mgmt_port").asInt().value;
+			mgmt_loopback_only = jr->asObj().at("mgmt_loopback_only").asBool().value;
+		}
+
+		LoggingIrcServer serv;
+		auto certstore = soup::make_shared<soup::CertStore>();
+		soup::X509Certchain certchain;
+		certchain.fromDer({
+			soup::pem::decode(R"EOC(
 -----BEGIN CERTIFICATE-----
 MIIFEjCCA/qgAwIBAgISAzO1ak1tzkSo99OqAn2x+OfMMA0GCSqGSIb3DQEBCwUA
 MDIxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQswCQYDVQQD
@@ -255,8 +285,8 @@ MldlTTKB3zhThV1+XWYp6rjd5JW1zbVWEkLNxE7GJThEUG3szgBVGP7pSWTUTsqX
 nLRbwHOoq7hHwg==
 -----END CERTIFICATE-----
 )EOC"),
-		});
-	auto private_key = soup::RsaPrivateKey::fromPem(R"EOC(
+			});
+		auto private_key = soup::RsaPrivateKey::fromPem(R"EOC(
 -----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDYbeJly69Nd+bP
 EnzCEAJZzqp/xsGr2YTgisYGyBKqp0ubWfl4ItRx7a50siEVy57oNBc4AGhQ6/A1
@@ -286,30 +316,30 @@ IWTRPUZRNojVvK1dQ+xPN/9HsFVUb6JWyU4e3gocnYoe2zGdyT9p9u0Pr3JikgAC
 QJg24g1I/Zb4EUJmo2WNBzGS
 -----END PRIVATE KEY-----
 )EOC");
-	certstore->add(std::move(certchain), std::move(private_key));
-	if (!serv.bindCrypto(6695, &serv.srv, certstore)
-		|| !serv.bindCrypto(6696, &serv.srv, certstore)
-		|| !serv.bindCrypto(6697, &serv.srv, certstore)
-		|| !serv.bindCrypto(6698, &serv.srv, certstore)
-		|| !serv.bindCrypto(6699, &serv.srv, certstore)
-		)
-	{
-		std::cout << "Failed to bind to ports 6695-6699\n";
-		return 1;
-	}
-	std::cout << "Listening on ports 6695-6699\n";
-
-	ServerWebService web_srv([](soup::Socket& s, soup::HttpRequest&& req, soup::ServerWebService&)
-	{
-		if (!s.peer.ip.isLoopback())
+		certstore->add(std::move(certchain), std::move(private_key));
+		if (!serv.bindCrypto(6695, &serv.srv, certstore)
+			|| !serv.bindCrypto(6696, &serv.srv, certstore)
+			|| !serv.bindCrypto(6697, &serv.srv, certstore)
+			|| !serv.bindCrypto(6698, &serv.srv, certstore)
+			|| !serv.bindCrypto(6699, &serv.srv, certstore)
+			)
 		{
-			ServerWebService::sendText(s, "This service is available via loopback only.");
-			return;
+			std::cout << "Failed to bind to ports 6695-6699\n";
+			return 1;
 		}
+		std::cout << "Listening on ports 6695-6699\n";
 
-		if (req.path == "/")
+		ServerWebService web_srv([](soup::Socket& s, soup::HttpRequest&& req, soup::ServerWebService&)
 		{
-			ServerWebService::sendHtml(s, R"EOC(<p>Send redtext</p>
+			if (mgmt_loopback_only && !s.peer.ip.isLoopback())
+			{
+				ServerWebService::sendText(s, "This service is available via loopback only.");
+				return;
+			}
+
+			if (req.path == "/")
+			{
+				ServerWebService::sendHtml(s, R"EOC(<p>Send redtext</p>
 <input type="text" />
 <input type="submit" onclick="sendRedtext();" />
 <script>
@@ -317,24 +347,35 @@ QJg24g1I/Zb4EUJmo2WNBzGS
 		fetch("/redtext?" + encodeURIComponent(document.querySelector("input[type=text]").value));
 	}
 </script>)EOC");
-		}
-		else if (req.path.substr(0, 9) == "/redtext?")
+			}
+			else if (req.path.substr(0, 9) == "/redtext?")
+			{
+				std::string msg = ":Soup WALLOPS :";
+				msg.append(urlenc::decode(req.path.substr(9)));
+				msg.append("\r\n");
+				static_cast<IrcServer*>(Scheduler::get())->broadcast(msg);
+			}
+			else
+			{
+				ServerWebService::send404(s);
+			}
+		});
+		if (serv.bind(mgmt_port, &web_srv))
 		{
-			std::string msg = ":Soup WALLOPS :";
-			msg.append(urlenc::decode(req.path.substr(9)));
-			msg.append("\r\n");
-			static_cast<IrcServer*>(Scheduler::get())->broadcast(msg);
+			std::cout << "Management interface available at http://localhost:" << mgmt_port;
+			if (mgmt_loopback_only)
+			{
+				std::cout << " (loopback only)";
+			}
+			std::cout << std::endl;
 		}
-		else
-		{
-			ServerWebService::send404(s);
-		}
-	});
-	if (serv.bind(6688, &web_srv))
-	{
-		std::cout << "Management interface available at http://localhost:6688 (loopback only)" << std::endl;
-	}
 
-	serv.run();
-	return 0;
+		serv.run();
+		return 0;
+	}
+	catch (std::exception& e)
+	{
+		std::cerr << e.what() << std::endl;
+		return 1;
+	}
 }
