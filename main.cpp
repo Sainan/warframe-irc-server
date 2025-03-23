@@ -20,15 +20,18 @@ static bool http_use_tls;
 static int16_t mgmt_port;
 static bool mgmt_loopback_only;
 
+struct AuthPendingTag {};
+
 struct AuthenticatedUserData
 {
 	std::string accountId;
 	std::string nonce;
 	std::string guildId;
 	bool guildChatModerator;
+	bool administrator;
 };
 
-struct VerifyCredsTask : public soup::Task
+struct VerifyCredsTask final : public soup::Task
 {
 	SharedPtr<Worker> s;
 	HttpRequestTask hrt;
@@ -42,7 +45,7 @@ struct VerifyCredsTask : public soup::Task
 
 	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
 	{
-		std::string path = "/api/getGuild.php?accountId=";
+		std::string path = "/custom/getAccountInfo?accountId=";
 		path.append(accountId);
 		path.append("&nonce=");
 		path.append(nonce);
@@ -54,7 +57,7 @@ struct VerifyCredsTask : public soup::Task
 		return hr;
 	}
 
-	void onTick()
+	void onTick() final
 	{
 		if (static_cast<Socket*>(s.get())->isWorkDoneOrClosed())
 		{
@@ -69,42 +72,17 @@ struct VerifyCredsTask : public soup::Task
 					AuthenticatedUserData aud{ std::move(accountId), std::move(nonce) };
 					if (auto jr = json::decode(hrt.result->body); jr && jr->isObj())
 					{
-						if (auto _id = jr->reinterpretAsObj().find("_id"))
+						if (auto GuildId = jr->reinterpretAsObj().find("GuildId"))
 						{
-							aud.guildId = _id->asObj().at("$oid").asStr();
-
-							int64_t permissions = 0;
-							for (const auto& member : jr->reinterpretAsObj().at("Members").asArr())
-							{
-								if (member.asObj().at("_id").asObj().at("$oid").asStr() == aud.accountId)
-								{
-									auto rank = member.asObj().at("Rank").asInt();
-									permissions = jr->reinterpretAsObj().at("Ranks").asArr().at(rank).asObj().at("Permissions").asInt();
-								}
-							}
-							aud.guildChatModerator = (permissions & 512);
+							aud.guildId = GuildId->asStr();
+							aud.guildChatModerator = (jr->reinterpretAsObj().at("GuildPermissions").asInt() & 512);
+						}
+						if (auto IsAdministrator = jr->reinterpretAsObj().find("IsAdministrator"))
+						{
+							aud.administrator = IsAdministrator->asBool();
 						}
 					}
 					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
-					if (!aud.guildId.empty() && aud.guildChatModerator)
-					{
-						auto& cd = static_cast<Socket*>(s.get())->custom_data.getStructFromMap(IrcClientData);
-						if (auto membership = cd.getMembership("#C" + aud.guildId))
-						{
-							std::cout << "Client had already joined guild channel, giving oper" << std::endl;
-							membership->op = true;
-
-							std::string msg = ":Soup MODE #C";
-							msg.append(aud.guildId);
-							msg.append(" +o ");
-							msg.append(cd.nick);
-							msg.append("\r\n");
-							for (const auto& member : static_cast<IrcServer*>(Scheduler::get())->getChannelMembers("#C" + aud.guildId))
-							{
-								member.socket->send(msg);
-							}
-						}
-					}
 					static_cast<Socket*>(s.get())->custom_data.addStructToMap(AuthenticatedUserData, std::move(aud));
 				}
 				else
@@ -112,12 +90,13 @@ struct VerifyCredsTask : public soup::Task
 					static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Failed to validate your credentials (accountId-nonce pair).\r\n");
 				}
 			}
+			static_cast<Socket*>(s.get())->custom_data.removeStructFromMap(AuthPendingTag);
 			setWorkDone();
 		}
 	}
 };
 
-struct ReportDropTask : public soup::Task
+struct ReportDropTask final : public soup::Task
 {
 	HttpRequestTask hrt;
 
@@ -140,12 +119,66 @@ struct ReportDropTask : public soup::Task
 		return hr;
 	}
 
-	void onTick()
+	void onTick() final
 	{
 		if (hrt.tickUntilDone())
 		{
 			setWorkDone();
 		}
+	}
+};
+
+struct HandleChannelJoinTask final : public soup::Task
+{
+	SharedPtr<Worker> s;
+	std::string channel_name;
+
+	HandleChannelJoinTask(Socket& _s, const std::string& channel_name)
+		: s(Scheduler::get()->getShared(_s)), channel_name(channel_name)
+	{
+	}
+
+	void onTick() final
+	{
+		if (static_cast<Socket*>(s.get())->custom_data.isStructInMap(AuthPendingTag))
+		{
+			return;
+		}
+		if (static_cast<Socket*>(s.get())->custom_data.isStructInMap(AuthenticatedUserData))
+		{
+			bool op;
+			if (channel_name.substr(0, 2) == "#C")
+			{
+				op = (static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
+					&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
+					);
+			}
+			else
+			{
+				op = static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).administrator;
+			}
+			if (op)
+			{
+				auto& cd = static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(IrcClientData);
+				if (auto membership = cd.getMembership(channel_name))
+				{
+					std::cout << "Giving " << cd.nick << " oper in " << channel_name << std::endl;
+
+					membership->op = true;
+
+					std::string msg = ":Soup MODE ";
+					msg.append(channel_name);
+					msg.append(" +o ");
+					msg.append(cd.nick);
+					msg.append("\r\n");
+					for (const auto& member : static_cast<IrcServer*>(Scheduler::get())->getChannelMembers(channel_name))
+					{
+						member.socket->send(msg);
+					}
+				}
+			}
+		}
+		setWorkDone();
 	}
 };
 
@@ -173,24 +206,15 @@ struct LoggingIrcServer : public soup::IrcServer
 			&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
 			)
 		{
+			s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
 			this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(42));
 		}
 	}
 
-	void onClientJoinedChannel(Socket& s, const std::string& channel_name, IrcChannelMembershipData& md)
+	void onClientJoinedChannel(Socket& s, const std::string& channel_name, IrcChannelMembershipData& md) final
 	{
-		if (channel_name.substr(0, 2) == "#C")
-		{
-			md.op = (s.custom_data.isStructInMap(AuthenticatedUserData)
-				&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
-				&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
-				);
-			std::cout << "Adjusting oper for user in " << channel_name << ": " << md.op << std::endl;
-		}
-		else
-		{
-			md.op = false;
-		}
+		this->add<HandleChannelJoinTask>(s, channel_name);
+		md.op = false;
 	}
 };
 
