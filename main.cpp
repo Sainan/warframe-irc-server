@@ -27,7 +27,9 @@ struct AuthenticatedUserData
 	std::string accountId;
 	std::string nonce;
 	std::string guildId;
+	std::string allianceId;
 	bool guildChatModerator;
+	bool allianceChatModerator;
 	bool administrator;
 };
 
@@ -76,6 +78,13 @@ struct VerifyCredsTask final : public soup::Task
 						{
 							aud.guildId = GuildId->asStr();
 							aud.guildChatModerator = (jr->reinterpretAsObj().at("GuildPermissions").asInt() & 512);
+							if (auto AllianceId = jr->reinterpretAsObj().find("AllianceId"))
+							{
+								aud.allianceId = AllianceId->asStr();
+								aud.allianceChatModerator = (jr->reinterpretAsObj().at("GuildRank").asInt() <= 1)
+														&& (jr->reinterpretAsObj().at("AlliancePermissions").asInt() & 512)
+														;
+							}
 						}
 						if (auto IsAdministrator = jr->reinterpretAsObj().find("IsAdministrator"))
 						{
@@ -151,6 +160,12 @@ struct HandleChannelJoinTask final : public soup::Task
 			{
 				op = (static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
 					&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
+					);
+			}
+			else if (channel_name.substr(0, 2) == "#A")
+			{
+				op = (static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).allianceId == channel_name.substr(2)
+					&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).allianceChatModerator
 					);
 			}
 			else
