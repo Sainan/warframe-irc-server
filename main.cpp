@@ -247,6 +247,10 @@ struct LoggingIrcServer : public soup::IrcServer
 		{
 			md.op = false;
 		}
+		if (md.op)
+		{
+			std::cout << "Giving " << s.custom_data.getStructFromMapConst(IrcClientData).nick << " oper in " << channel_name << std::endl;
+		}
 	}
 };
 
