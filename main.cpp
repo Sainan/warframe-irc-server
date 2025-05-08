@@ -251,25 +251,30 @@ int main()
 	{
 		soup::console.init(false);
 
-		if (!std::filesystem::exists("irc_config.json"))
 		{
-			JsonObject config;
-			config.add("http_host", "localhost");
-			config.add("http_port", 80);
-			config.add("http_use_tls", false);
-			config.add("mgmt_port", 6688);
-			config.add("mgmt_loopback_only", true);
-			soup::string::toFile("irc_config.json", config.encodePretty());
-		}
+			UniquePtr<JsonNode> config = json::decode(string::fromFile("irc_config.json"));
 
-		{
-			auto jr = json::decode(string::fromFile("irc_config.json"));
-			SOUP_ASSERT(jr);
-			http_host = jr->asObj().at("http_host").asStr().value;
-			http_port = jr->asObj().at("http_port").asInt().value;
-			http_use_tls = jr->asObj().at("http_use_tls").asBool().value;
-			mgmt_port = jr->asObj().at("mgmt_port").asInt().value;
-			mgmt_loopback_only = jr->asObj().at("mgmt_loopback_only").asBool().value;
+			bool modified = false;
+			if (!config || !config->isObj())
+			{
+				modified = true;
+				config = soup::make_unique<JsonObject>();
+			}
+			if (!config->reinterpretAsObj().contains("http_host")) { modified = true; config->reinterpretAsObj().add("http_host", "localhost"); }
+			if (!config->reinterpretAsObj().contains("http_port")) { modified = true; config->reinterpretAsObj().add("http_port", 80); }
+			if (!config->reinterpretAsObj().contains("http_use_tls")) { modified = true; config->reinterpretAsObj().add("http_use_tls", false); }
+			if (!config->reinterpretAsObj().contains("mgmt_port")) { modified = true; config->reinterpretAsObj().add("mgmt_port", 6688); }
+			if (!config->reinterpretAsObj().contains("mgmt_loopback_only")) { modified = true; config->reinterpretAsObj().add("mgmt_loopback_only", true); }
+			if (modified)
+			{
+				string::toFile("irc_config.json", config->reinterpretAsObj().encodePretty());
+			}
+
+			http_host = config->reinterpretAsObj().at("http_host").asStr().value;
+			http_port = config->reinterpretAsObj().at("http_port").asInt().value;
+			http_use_tls = config->reinterpretAsObj().at("http_use_tls").asBool().value;
+			mgmt_port = config->reinterpretAsObj().at("mgmt_port").asInt().value;
+			mgmt_loopback_only = config->reinterpretAsObj().at("mgmt_loopback_only").asBool().value;
 		}
 
 		LoggingIrcServer serv;
