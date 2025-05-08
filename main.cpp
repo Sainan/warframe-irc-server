@@ -20,6 +20,8 @@ static bool http_use_tls;
 static int16_t mgmt_port;
 static bool mgmt_loopback_only;
 
+static bool public_chats_allow_noobies;
+
 struct AuthPendingTag {};
 
 struct AuthenticatedUserData
@@ -173,9 +175,12 @@ struct VerifyChannelJoinTask final : public soup::Task
 				|| channel_name.substr(0, 2) == "#Q" // Q&A
 				)
 			{
-				std::cout << "Rejecting " << static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(IrcClientData).nick << " from " << channel_name << " due to being a noobie" << std::endl;
-				reject_reason_promise.fulfil("Censored");
-				return setWorkDone();
+				if (!public_chats_allow_noobies)
+				{
+					std::cout << "Rejecting " << static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(IrcClientData).nick << " from " << channel_name << " due to being a noobie" << std::endl;
+					reject_reason_promise.fulfil("Censored");
+					return setWorkDone();
+				}
 			}
 		}
 		reject_reason_promise.fulfil({});
@@ -265,6 +270,7 @@ int main()
 			if (!config->reinterpretAsObj().contains("http_use_tls")) { modified = true; config->reinterpretAsObj().add("http_use_tls", false); }
 			if (!config->reinterpretAsObj().contains("mgmt_port")) { modified = true; config->reinterpretAsObj().add("mgmt_port", 6688); }
 			if (!config->reinterpretAsObj().contains("mgmt_loopback_only")) { modified = true; config->reinterpretAsObj().add("mgmt_loopback_only", true); }
+			if (!config->reinterpretAsObj().contains("public_chats_allow_noobies")) { modified = true; config->reinterpretAsObj().add("public_chats_allow_noobies", false); }
 			if (modified)
 			{
 				string::toFile("irc_config.json", config->reinterpretAsObj().encodePretty());
@@ -275,6 +281,7 @@ int main()
 			http_use_tls = config->reinterpretAsObj().at("http_use_tls").asBool().value;
 			mgmt_port = config->reinterpretAsObj().at("mgmt_port").asInt().value;
 			mgmt_loopback_only = config->reinterpretAsObj().at("mgmt_loopback_only").asBool().value;
+			public_chats_allow_noobies = config->reinterpretAsObj().at("public_chats_allow_noobies").asBool().value;
 		}
 
 		LoggingIrcServer serv;
