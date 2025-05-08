@@ -31,6 +31,7 @@ struct AuthenticatedUserData
 	bool guildChatModerator;
 	bool allianceChatModerator;
 	bool administrator;
+	bool noobie;
 };
 
 struct VerifyCredsTask final : public soup::Task
@@ -90,6 +91,10 @@ struct VerifyCredsTask final : public soup::Task
 						{
 							aud.administrator = IsAdministrator->asBool();
 						}
+						if (auto CompletedVorsPrize = jr->reinterpretAsObj().find("CompletedVorsPrize"))
+						{
+							aud.noobie = !CompletedVorsPrize->asBool();
+						}
 					}
 					std::cout << "Successful auth, guildId=" << aud.guildId << std::endl;
 					static_cast<Socket*>(s.get())->custom_data.addStructToMap(AuthenticatedUserData, std::move(aud));
@@ -137,62 +142,43 @@ struct ReportDropTask final : public soup::Task
 	}
 };
 
-struct HandleChannelJoinTask final : public soup::Task
+struct VerifyChannelJoinTask final : public soup::Task
 {
 	SharedPtr<Worker> s;
-	std::string channel_name;
+	const std::string& channel_name;
+	Promise<std::string>& reject_reason_promise;
 
-	HandleChannelJoinTask(Socket& _s, const std::string& channel_name)
-		: s(Scheduler::get()->getShared(_s)), channel_name(channel_name)
+	VerifyChannelJoinTask(Socket& _s, const std::string& channel_name, Promise<std::string>& reject_reason_promise)
+		: s(Scheduler::get()->getShared(_s)), channel_name(channel_name), reject_reason_promise(reject_reason_promise)
 	{
 	}
 
 	void onTick() final
 	{
+		if (static_cast<Socket*>(s.get())->isWorkDoneOrClosed())
+		{
+			return setWorkDone();
+		}
 		if (static_cast<Socket*>(s.get())->custom_data.isStructInMap(AuthPendingTag))
 		{
 			return;
 		}
-		if (static_cast<Socket*>(s.get())->custom_data.isStructInMap(AuthenticatedUserData))
+		if (static_cast<Socket*>(s.get())->custom_data.isStructInMap(AuthenticatedUserData)
+			&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).noobie
+			)
 		{
-			bool op;
-			if (channel_name.substr(0, 2) == "#C")
+			if (channel_name.substr(0, 2) == "#R" // Recruiting
+				|| channel_name.substr(0, 2) == "#T" // Trade
+				|| channel_name.substr(0, 2) == "#G" // Region
+				|| channel_name.substr(0, 2) == "#Q" // Q&A
+				)
 			{
-				op = (static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
-					&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
-					);
-			}
-			else if (channel_name.substr(0, 2) == "#A")
-			{
-				op = (static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).allianceId == channel_name.substr(2)
-					&& static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).allianceChatModerator
-					);
-			}
-			else
-			{
-				op = static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(AuthenticatedUserData).administrator;
-			}
-			if (op)
-			{
-				auto& cd = static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(IrcClientData);
-				if (auto membership = cd.getMembership(channel_name))
-				{
-					std::cout << "Giving " << cd.nick << " oper in " << channel_name << std::endl;
-
-					membership->op = true;
-
-					std::string msg = ":Soup MODE ";
-					msg.append(channel_name);
-					msg.append(" +o ");
-					msg.append(cd.nick);
-					msg.append("\r\n");
-					for (const auto& member : static_cast<IrcServer*>(Scheduler::get())->getChannelMembers(channel_name))
-					{
-						member.socket->send(msg);
-					}
-				}
+				std::cout << "Rejecting " << static_cast<Socket*>(s.get())->custom_data.getStructFromMapConst(IrcClientData).nick << " from " << channel_name << " due to being a noobie" << std::endl;
+				reject_reason_promise.fulfil("Censored");
+				return setWorkDone();
 			}
 		}
+		reject_reason_promise.fulfil({});
 		setWorkDone();
 	}
 };
@@ -226,10 +212,36 @@ struct LoggingIrcServer : public soup::IrcServer
 		}
 	}
 
+	void canClientJoinChannel(Socket& s, const std::string& channel_name, Promise<std::string>& reject_reason_promise) final
+	{
+		this->add<VerifyChannelJoinTask>(s, channel_name, reject_reason_promise);
+	}
+
 	void onClientJoinedChannel(Socket& s, const std::string& channel_name, IrcChannelMembershipData& md) final
 	{
-		this->add<HandleChannelJoinTask>(s, channel_name);
-		md.op = false;
+		if (s.custom_data.isStructInMap(AuthenticatedUserData))
+		{
+			if (channel_name.substr(0, 2) == "#C")
+			{
+				md.op = (s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildId == channel_name.substr(2)
+					&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).guildChatModerator
+					);
+			}
+			else if (channel_name.substr(0, 2) == "#A")
+			{
+				md.op = (s.custom_data.getStructFromMapConst(AuthenticatedUserData).allianceId == channel_name.substr(2)
+					&& s.custom_data.getStructFromMapConst(AuthenticatedUserData).allianceChatModerator
+					);
+			}
+			else
+			{
+				md.op = s.custom_data.getStructFromMapConst(AuthenticatedUserData).administrator;
+			}
+		}
+		else
+		{
+			md.op = false;
+		}
 	}
 };
 
