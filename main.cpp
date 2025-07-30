@@ -277,7 +277,11 @@ int main()
 				modified = true;
 				config = soup::make_unique<JsonObject>();
 			}
+#ifdef DOCKER
+			if (!config->reinterpretAsObj().contains("http_host")) { modified = true; config->reinterpretAsObj().add("http_host", "spaceninjaserver"); }
+#else
 			if (!config->reinterpretAsObj().contains("http_host")) { modified = true; config->reinterpretAsObj().add("http_host", "localhost"); }
+#endif
 			if (!config->reinterpretAsObj().contains("http_port")) { modified = true; config->reinterpretAsObj().add("http_port", 80); }
 			if (!config->reinterpretAsObj().contains("http_use_tls")) { modified = true; config->reinterpretAsObj().add("http_use_tls", false); }
 			if (!config->reinterpretAsObj().contains("mgmt_port")) { modified = true; config->reinterpretAsObj().add("mgmt_port", 6688); }
