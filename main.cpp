@@ -2,9 +2,11 @@
 
 #include <CertStore.hpp>
 #include <console.hpp>
+#include <dnsOsResolver.hpp>
 #include <HttpRequestTask.hpp>
 #include <IrcServer.hpp>
 #include <json.hpp>
+#include <netConfig.hpp>
 #include <pem.hpp>
 #include <ServerWebService.hpp>
 #include <Socket.hpp>
@@ -446,6 +448,8 @@ QJg24g1I/Zb4EUJmo2WNBzGS
 			}
 			std::cout << std::endl;
 		}
+
+		netConfig::get().dns_resolver = soup::make_shared<dnsOsResolver>();
 
 		serv.run();
 		return 0;
