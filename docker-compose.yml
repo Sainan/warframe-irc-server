@@ -1,0 +1,13 @@
+services:
+  warframe-irc-server:
+    image: openwf/warframe-irc-server
+    #build: .
+    volumes:
+      - ./conf:/app/conf
+    ports:
+      - 6695:6695
+      - 6696:6696
+      - 6697:6697
+      - 6698:6698
+      - 6699:6699
+      #- 6688:6688 # mgmt_port (requires mgmt_loopback_only set to false for docker, so not really recommended on public facing servers)

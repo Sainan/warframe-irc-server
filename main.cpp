@@ -254,6 +254,12 @@ struct LoggingIrcServer : public soup::IrcServer
 	}
 };
 
+#ifdef DOCKER
+	#define CONFIG_PATH "conf/irc_config.json"
+#else
+	#define CONFIG_PATH "irc_config.json"
+#endif
+
 int main()
 {
 	try
@@ -261,7 +267,7 @@ int main()
 		soup::console.init(false);
 
 		{
-			UniquePtr<JsonNode> config = json::decode(string::fromFile("irc_config.json"));
+			UniquePtr<JsonNode> config = json::decode(string::fromFile(CONFIG_PATH));
 
 			bool modified = false;
 			if (!config || !config->isObj())
@@ -277,7 +283,7 @@ int main()
 			if (!config->reinterpretAsObj().contains("public_chats_allow_noobies")) { modified = true; config->reinterpretAsObj().add("public_chats_allow_noobies", false); }
 			if (modified)
 			{
-				string::toFile("irc_config.json", config->reinterpretAsObj().encodePretty());
+				string::toFile(CONFIG_PATH, config->reinterpretAsObj().encodePretty());
 			}
 
 			http_host = config->reinterpretAsObj().at("http_host").asStr().value;
