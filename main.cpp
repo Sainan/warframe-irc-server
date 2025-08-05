@@ -13,6 +13,10 @@
 #include <urlenc.hpp>
 #include <X509Certchain.hpp>
 
+#ifdef DOCKER
+#include <signal.h>
+#endif
+
 using namespace soup;
 
 static std::string http_host;
@@ -454,6 +458,11 @@ QJg24g1I/Zb4EUJmo2WNBzGS
 		}
 
 		netConfig::get().dns_resolver = soup::make_shared<dnsOsResolver>();
+
+#ifdef DOCKER
+		// Ctrl+C not killing your software? According to the professional ChatGPTs hired by Docker Inc, it's not an issue. Why? Because there's a workaround!
+		signal(SIGTERM, [](int) { exit(0); });
+#endif
 
 		serv.run();
 		return 0;
