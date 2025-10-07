@@ -1,12 +1,4 @@
-FROM alpine:3.22.1
-
-RUN apk add --no-cache php clang
-
-# Compile Soup (excluding a few source files that fail on Alphine)
-COPY Soup /app/Soup
-WORKDIR /app/Soup
-RUN rm soup/AnalogueKeyboard.cpp soup/DigitalKeyboard.cpp soup/MathExpr.cpp soup/Keyboard.cpp soup/Window.cpp soup/hwHid.cpp soup/hwGamepad.cpp soup/kbRgbWooting.cpp soup/lyoDocument.cpp
-RUN php build_lib.php
+FROM ghcr.io/calamity-inc/soup:4538b1ce2565ddab826d822cef7469cc0e6c72d8
 
 # Compile app
 COPY main.cpp /app

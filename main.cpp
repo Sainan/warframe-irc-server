@@ -20,7 +20,6 @@
 using namespace soup;
 
 static std::string http_host;
-static int16_t http_port;
 static bool http_use_tls;
 
 static int16_t mgmt_port;
@@ -63,7 +62,6 @@ struct VerifyCredsTask final : public soup::Task
 		path.append("&ct=IRC");
 
 		HttpRequest hr(http_host, std::move(path));
-		hr.port = http_port;
 		hr.use_tls = http_use_tls;
 		return hr;
 	}
@@ -136,7 +134,6 @@ struct ReportDropTask final : public soup::Task
 		path.append("&ct=IRC");
 
 		HttpRequest hr(http_host, std::move(path));
-		hr.port = http_port;
 		hr.use_tls = http_use_tls;
 		return hr;
 	}
@@ -297,8 +294,12 @@ int main()
 			}
 
 			http_host = config->reinterpretAsObj().at("http_host").asStr().value;
-			http_port = config->reinterpretAsObj().at("http_port").asInt().value;
 			http_use_tls = config->reinterpretAsObj().at("http_use_tls").asBool().value;
+			if (uint16_t http_port = config->reinterpretAsObj().at("http_port").asInt().value; http_port != (http_use_tls ? 443 : 80))
+			{
+				http_host.push_back(':');
+				http_host.append(std::to_string(config->reinterpretAsObj().at("http_port").asInt().value));
+			}
 			mgmt_port = config->reinterpretAsObj().at("mgmt_port").asInt().value;
 			mgmt_loopback_only = config->reinterpretAsObj().at("mgmt_loopback_only").asBool().value;
 			public_chats_allow_noobies = config->reinterpretAsObj().at("public_chats_allow_noobies").asBool().value;
