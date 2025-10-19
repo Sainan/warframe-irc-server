@@ -17,7 +17,7 @@ jobs:
             - name: Build and push
               uses: docker/build-push-action@v6
               with:
-                  platforms: linux/amd64 # ,linux/arm64 takes too much time
+                  platforms: linux/amd64,linux/arm64
                   push: true
                   tags: |
                       openwf/warframe-irc-server:latest
