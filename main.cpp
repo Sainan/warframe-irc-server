@@ -35,10 +35,10 @@ struct AuthenticatedUserData
 	std::string nonce;
 	std::string guildId;
 	std::string allianceId;
-	bool guildChatModerator;
-	bool allianceChatModerator;
-	bool administrator;
-	bool noobie;
+	bool guildChatModerator = false;
+	bool allianceChatModerator = false;
+	bool administrator = false;
+	bool noobie = false;
 };
 
 struct VerifyCredsTask final : public soup::Task
