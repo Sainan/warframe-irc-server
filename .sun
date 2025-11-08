@@ -1,4 +1,5 @@
 +*.cpp
+c++ 20
 require Soup/soup
 arg -O3
 linker_arg -fuse-ld=lld

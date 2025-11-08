@@ -214,10 +214,27 @@ struct LoggingIrcServer : public soup::IrcServer
 		std::cout << s.toString() << " | " << line << "\n";
 		if (line.substr(0, 4) == "USER")
 		{
-			if (const auto sep = line.size() > 42 ? line.find(" nonce=", 33) : std::string::npos; sep != std::string::npos) // Bootstrapper 0.10.4 and above
+			auto arr = string::explode(line, ' ');
+			std::string nonce;
+			if (arr.size() == 5)
+			{
+				auto realname = arr[4];
+				if (realname.c_str()[0] != ':') // Not a real IRC client?
+				{
+					if (realname.starts_with("nonce=")) // Bootstrapper 0.10.4 and above
+					{
+						nonce = realname.substr(6);
+					}
+					else
+					{
+						nonce = std::move(realname); // U8 and below
+					}
+				}
+			}
+			if (!nonce.empty())
 			{
 				s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
-				this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(sep + 7));
+				this->add<VerifyCredsTask>(s, line.substr(5, 24), std::move(nonce));
 			}
 			else
 			{
