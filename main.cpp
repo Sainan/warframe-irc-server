@@ -51,6 +51,7 @@ struct VerifyCredsTask final : public soup::Task
 	VerifyCredsTask(Socket& _s, std::string&& accountId, std::string&& nonce)
 		: s(Scheduler::get()->getShared(_s)), hrt(buildRequest(accountId, nonce)), accountId(std::move(accountId)), nonce(std::move(nonce))
 	{
+		//SOUP_ASSERT(s);
 	}
 
 	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
