@@ -211,12 +211,19 @@ struct LoggingIrcServer : public soup::IrcServer
 	void onClientLineReceived(Socket& s, const std::string& line) final
 	{
 		std::cout << s.toString() << " | " << line << "\n";
-		if (line.substr(0, 4) == "USER" && line.size() > 42
-			&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
-			)
+		if (line.substr(0, 4) == "USER")
 		{
-			s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
-			this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(42));
+			if (line.size() > 42
+				&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
+				)
+			{
+				s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
+				this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(42));
+			}
+			else
+			{
+				s.send(":Soup WALLOPS :Your client did not provide credentials (accountId-nonce pair). You will be chatting unauthenticated.\r\n");
+			}
 		}
 	}
 
