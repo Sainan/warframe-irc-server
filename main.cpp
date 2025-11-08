@@ -426,7 +426,21 @@ hToW9o9CQMIhaR43G8di1kjF
 			std::cout << "Failed to bind to ports 6695-6699\n";
 			return 1;
 		}
-		std::cout << "Listening on ports 6695-6699\n";
+		std::cout << "Listening for TLS traffic on 6695-6699\n";
+
+		if (serv.bind(6665, &serv.srv)
+			&& serv.bind(6666, &serv.srv)
+			&& serv.bind(6667, &serv.srv)
+			&& serv.bind(6668, &serv.srv)
+			&& serv.bind(6669, &serv.srv)
+			)
+		{
+			std::cout << "Listening for unencrypted traffic on 6665-6669\n";
+		}
+		else
+		{
+			std::cout << "Failed to bind to ports 6665-6669, won't be listening for unencrypted traffic\n";
+		}
 
 		ServerWebService web_srv([](soup::Socket& s, soup::HttpRequest&& req, soup::ServerWebService&)
 		{
