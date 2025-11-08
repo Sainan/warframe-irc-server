@@ -213,12 +213,10 @@ struct LoggingIrcServer : public soup::IrcServer
 		std::cout << s.toString() << " | " << line << "\n";
 		if (line.substr(0, 4) == "USER")
 		{
-			if (line.size() > 42
-				&& line.substr(36, 6) == "nonce=" // Boostrapper 0.10.4 and above
-				)
+			if (const auto sep = line.size() > 42 ? line.find(" nonce=", 33) : std::string::npos; sep != std::string::npos) // Bootstrapper 0.10.4 and above
 			{
 				s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
-				this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(42));
+				this->add<VerifyCredsTask>(s, line.substr(5, 24), line.substr(sep + 7));
 			}
 			else
 			{
