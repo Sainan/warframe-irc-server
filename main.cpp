@@ -225,9 +225,9 @@ struct LoggingIrcServer : public soup::IrcServer
 					{
 						nonce = realname.substr(6);
 					}
-					else
+					else if (realname.size() != 40) // U8 and below
 					{
-						nonce = std::move(realname); // U8 and below
+						nonce = std::move(realname);
 					}
 				}
 			}
