@@ -1,4 +1,4 @@
-FROM ghcr.io/calamity-inc/soup:a702e6001683c3f8e0f257a1247843dac543995d
+FROM ghcr.io/calamity-inc/soup:4ca93073fbbb548a0337126c79543ac54288be81
 
 # Compile app
 COPY main.cpp /app
