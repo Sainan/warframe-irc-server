@@ -214,6 +214,9 @@ struct LoggingIrcServer : public soup::IrcServer
 		std::cout << s.toString() << " | " << line << "\n";
 		if (line.substr(0, 4) == "USER")
 		{
+			// Needed for client to understand that it has indeed connected to the server in U16.5 ~ U27.3
+			s.send(":Soup 305 Soup :You are no longer marked as being away\r\n");
+
 			auto arr = string::explode(line, ' ');
 			std::string nonce;
 			if (arr.size() == 5)
