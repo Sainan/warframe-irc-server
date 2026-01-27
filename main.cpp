@@ -9,6 +9,7 @@
 #include <netConfig.hpp>
 #include <pem.hpp>
 #include <ServerWebService.hpp>
+#include <sha256.hpp>
 #include <Socket.hpp>
 #include <urlenc.hpp>
 #include <X509Certchain.hpp>
@@ -27,12 +28,22 @@ static bool mgmt_loopback_only;
 
 static bool public_chats_allow_noobies;
 
+static std::string create_token(const std::string& accountId, const std::string& nonce)
+{
+	soup::sha256::HmacState st(nonce);
+	st.append("accountId=", 10);
+	st.append(accountId.data(), accountId.size());
+	st.append("&ct=IRC", 7);
+	st.finalise();
+	return string::bin2hexLower(st.getDigest());
+}
+
 struct AuthPendingTag {};
 
 struct AuthenticatedUserData
 {
 	std::string accountId;
-	std::string nonce;
+	std::string token;
 	std::string guildId;
 	std::string allianceId;
 	bool guildChatModerator = false;
@@ -46,20 +57,20 @@ struct VerifyCredsTask final : public soup::Task
 	SharedPtr<Worker> s;
 	HttpRequestTask hrt;
 	std::string accountId;
-	std::string nonce;
+	std::string token;
 
-	VerifyCredsTask(Socket& _s, std::string&& accountId, std::string&& nonce)
-		: s(Scheduler::get()->getShared(_s)), hrt(buildRequest(accountId, nonce)), accountId(std::move(accountId)), nonce(std::move(nonce))
+	VerifyCredsTask(Socket& _s, std::string&& accountId, std::string&& token)
+		: s(Scheduler::get()->getShared(_s)), hrt(buildRequest(accountId, token)), accountId(std::move(accountId)), token(std::move(token))
 	{
 		//SOUP_ASSERT(s);
 	}
 
-	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
+	static HttpRequest buildRequest(const std::string& accountId, const std::string& token)
 	{
 		std::string path = "/custom/getAccountInfo?accountId=";
 		path.append(accountId);
-		path.append("&nonce=");
-		path.append(nonce);
+		path.append("&token=");
+		path.append(token);
 		path.append("&ct=IRC");
 
 		HttpRequest hr(http_host, std::move(path));
@@ -79,7 +90,7 @@ struct VerifyCredsTask final : public soup::Task
 			{
 				if (hrt.result->status_code == 200)
 				{
-					AuthenticatedUserData aud{ std::move(accountId), std::move(nonce) };
+					AuthenticatedUserData aud{ std::move(accountId), std::move(token) };
 					if (auto jr = json::decode(hrt.result->body); jr && jr->isObj())
 					{
 						if (auto GuildId = jr->reinterpretAsObj().find("GuildId"))
@@ -108,7 +119,7 @@ struct VerifyCredsTask final : public soup::Task
 				}
 				else
 				{
-					static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Failed to validate your credentials (accountId-nonce pair).\r\n");
+					static_cast<Socket*>(s.get())->send(":Soup WALLOPS :Failed to validate your credentials.\r\n");
 				}
 			}
 			static_cast<Socket*>(s.get())->custom_data.removeStructFromMap(AuthPendingTag);
@@ -122,16 +133,16 @@ struct ReportDropTask final : public soup::Task
 	HttpRequestTask hrt;
 
 	ReportDropTask(const AuthenticatedUserData& aud)
-		: hrt(buildRequest(aud.accountId, aud.nonce))
+		: hrt(buildRequest(aud.accountId, aud.token))
 	{
 	}
 
-	static HttpRequest buildRequest(const std::string& accountId, const std::string& nonce)
+	static HttpRequest buildRequest(const std::string& accountId, const std::string& token)
 	{
 		std::string path = "/custom/ircDropped?accountId=";
 		path.append(accountId);
-		path.append("&nonce=");
-		path.append(nonce);
+		path.append("&token=");
+		path.append(token);
 		path.append("&ct=IRC");
 
 		HttpRequest hr(http_host, std::move(path));
@@ -217,31 +228,37 @@ struct LoggingIrcServer : public soup::IrcServer
 			// Needed for client to understand that it has indeed connected to the server in U16.5 ~ U27.3
 			s.send(":Soup 305 Soup :You are no longer marked as being away\r\n");
 
-			auto arr = string::explode(line, ' ');
-			std::string nonce;
-			if (arr.size() == 5)
+			std::string accountId = line.substr(5, 24);
+			std::string token;
+			if (auto arr = string::explode(line, ' '); arr.size() == 5)
 			{
 				auto realname = arr[4];
 				if (realname.c_str()[0] != ':') // Not a real IRC client?
 				{
-					if (realname.starts_with("nonce=")) // Bootstrapper 0.10.4 and above
+					if (realname.starts_with("token=")) // Bootstrapper 0.13.0 and above with secure_connections set to true
 					{
-						nonce = realname.substr(6);
+						token = realname.substr(6);
+					}
+					else if (realname.starts_with("nonce=")) // Bootstrapper 0.10.4 and above
+					{
+						//s.send(":Soup WALLOPS :Your client sent your accountId-nonce pair (granting full account access) over an insecure transport.\r\n");
+						token = create_token(accountId, realname.substr(6));
 					}
 					else if (realname.size() != 40) // U8 and below
 					{
-						nonce = std::move(realname);
+						//s.send(":Soup WALLOPS :Your client sent your accountId-nonce pair (granting full account access) over an insecure transport.\r\n");
+						token = create_token(accountId, std::move(realname));
 					}
 				}
 			}
-			if (!nonce.empty())
+			if (!token.empty())
 			{
 				s.custom_data.addStructToMap(AuthPendingTag, AuthPendingTag{});
-				this->add<VerifyCredsTask>(s, line.substr(5, 24), std::move(nonce));
+				this->add<VerifyCredsTask>(s, std::move(accountId), std::move(token));
 			}
 			else
 			{
-				s.send(":Soup WALLOPS :Your client did not provide credentials (accountId-nonce pair). You will be chatting unauthenticated.\r\n");
+				s.send(":Soup WALLOPS :Your client did not provide credentials. You will be chatting unauthenticated.\r\n");
 			}
 		}
 	}
