@@ -471,11 +471,11 @@ hToW9o9CQMIhaR43G8di1kjF
 		}
 		std::cout << "Listening for TLS traffic on 6695-6699\n";
 
-		if (serv.bind(6665, &serv.srv)
-			&& serv.bind(6666, &serv.srv)
-			&& serv.bind(6667, &serv.srv)
-			&& serv.bind(6668, &serv.srv)
-			&& serv.bind(6669, &serv.srv)
+		if (serv.bindOptCrypto(6665, &serv.srv, certstore)
+			&& serv.bindOptCrypto(6666, &serv.srv, certstore)
+			&& serv.bindOptCrypto(6667, &serv.srv, certstore)
+			&& serv.bindOptCrypto(6668, &serv.srv, certstore)
+			&& serv.bindOptCrypto(6669, &serv.srv, certstore)
 			)
 		{
 			std::cout << "Listening for unencrypted traffic on 6665-6669\n";
