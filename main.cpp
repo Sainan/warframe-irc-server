@@ -11,6 +11,8 @@
 #include <ServerWebService.hpp>
 #include <sha256.hpp>
 #include <Socket.hpp>
+#include <TlsCipherSuite.hpp>
+#include <TlsClientHello.hpp>
 #include <urlenc.hpp>
 #include <X509Certchain.hpp>
 
@@ -300,6 +302,19 @@ struct LoggingIrcServer : public soup::IrcServer
 	}
 };
 
+// Try to pick an ECDHE ciphersuite first so that even if our private key is not-so-private a passive listener can't decrypt our traffic.
+static TlsCipherSuite_t select_ciphersuite(Socket& s, const TlsClientHello& hello)
+{
+	for (const auto& cs : hello.cipher_suites)
+	{
+		if (tls_serverSupportsCipherSuite(cs) && tls_isEcdheCiphersuite(cs))
+		{
+			return cs;
+		}
+	}
+	return Socket::default_select_ciphersuite(s, hello);
+}
+
 #ifdef DOCKER
 	#define CONFIG_PATH "conf/irc_config.json"
 #else
@@ -459,11 +474,11 @@ hToW9o9CQMIhaR43G8di1kjF
 -----END PRIVATE KEY-----
 )EOC");
 		certstore->add(std::move(certchain), std::move(private_key));
-		if (!serv.bindCrypto(6695, &serv.srv, certstore)
-			|| !serv.bindCrypto(6696, &serv.srv, certstore)
-			|| !serv.bindCrypto(6697, &serv.srv, certstore)
-			|| !serv.bindCrypto(6698, &serv.srv, certstore)
-			|| !serv.bindCrypto(6699, &serv.srv, certstore)
+		if (!serv.bindCrypto(6695, &serv.srv, certstore, &select_ciphersuite)
+			|| !serv.bindCrypto(6696, &serv.srv, certstore, &select_ciphersuite)
+			|| !serv.bindCrypto(6697, &serv.srv, certstore, &select_ciphersuite)
+			|| !serv.bindCrypto(6698, &serv.srv, certstore, &select_ciphersuite)
+			|| !serv.bindCrypto(6699, &serv.srv, certstore, &select_ciphersuite)
 			)
 		{
 			std::cout << "Failed to bind to ports 6695-6699\n";
@@ -471,11 +486,11 @@ hToW9o9CQMIhaR43G8di1kjF
 		}
 		std::cout << "Listening for TLS traffic on 6695-6699\n";
 
-		if (serv.bindOptCrypto(6665, &serv.srv, certstore)
-			&& serv.bindOptCrypto(6666, &serv.srv, certstore)
-			&& serv.bindOptCrypto(6667, &serv.srv, certstore)
-			&& serv.bindOptCrypto(6668, &serv.srv, certstore)
-			&& serv.bindOptCrypto(6669, &serv.srv, certstore)
+		if (serv.bindOptCrypto(6665, &serv.srv, certstore, &select_ciphersuite)
+			&& serv.bindOptCrypto(6666, &serv.srv, certstore, &select_ciphersuite)
+			&& serv.bindOptCrypto(6667, &serv.srv, certstore, &select_ciphersuite)
+			&& serv.bindOptCrypto(6668, &serv.srv, certstore, &select_ciphersuite)
+			&& serv.bindOptCrypto(6669, &serv.srv, certstore, &select_ciphersuite)
 			)
 		{
 			std::cout << "Listening for unencrypted traffic on 6665-6669\n";
