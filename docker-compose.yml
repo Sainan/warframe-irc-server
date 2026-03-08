@@ -10,4 +10,9 @@ services:
       - 6697:6697
       - 6698:6698
       - 6699:6699
+      - 6665:6665
+      - 6666:6666
+      - 6667:6667
+      - 6668:6668
+      - 6669:6669
       #- 6688:6688 # mgmt_port (requires mgmt_loopback_only set to false for docker, so not really recommended on public facing servers)
