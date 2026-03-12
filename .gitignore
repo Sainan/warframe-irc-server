@@ -1,4 +1,5 @@
 int/
 irc_config.json
 *.exe
+*.zip
 warframe-irc-server
