@@ -42,6 +42,8 @@ static std::string create_token(const std::string& accountId, const std::string&
 
 struct AuthPendingTag {};
 
+struct NoXplayTag {};
+
 struct AuthenticatedUserData
 {
 	std::string accountId;
@@ -261,6 +263,41 @@ struct LoggingIrcServer : public soup::IrcServer
 			else
 			{
 				s.send(":Soup WALLOPS :Your client did not provide credentials. You will be chatting unauthenticated.\r\n");
+			}
+		}
+		else if (line.substr(0, 4) == "NICK")
+		{
+			if (line.substr(line.size() - 3) != "")
+			{
+				// Fixup the nick for pre-U32 clients to have a platform suffix.
+				const_cast<std::string&>(line).append("");
+				s.custom_data.addStructToMap(NoXplayTag, NoXplayTag{});
+			}
+		}
+		else if (line.substr(0, 4) == "PRIV")
+		{
+			if (auto sep = line.find(' ', 8); sep != std::string::npos)
+			{
+				auto channel_name = line.substr(8, sep - 8);
+				if (auto client = getClient(channel_name); client.isValid())
+				{
+					if (client.socket->custom_data.isStructInMap(NoXplayTag))
+					{
+						// Fixup DMs so pre-U32 clients can receive them.
+
+						IrcClientData& cd = s.custom_data.getStructFromMap(IrcClientData);
+
+						std::string msg(1, ':');
+						msg.append(cd.nick);
+						msg.push_back('!');
+						msg.append(cd.name);
+						msg.append("@Soup PRIVMSG ");
+						msg.append(channel_name.substr(0, channel_name.size() - 3));
+						msg.append(line.substr(sep));
+						msg.append("\r\n");
+						client.socket->send(msg);
+					}
+				}
 			}
 		}
 	}
