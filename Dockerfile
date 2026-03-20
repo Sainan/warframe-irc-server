@@ -1,4 +1,4 @@
-FROM ghcr.io/calamity-inc/soup:55d7d976998f4d1c3139c529ee314d2b400b03b3
+FROM ghcr.io/calamity-inc/soup:6be2387cb68b71a2b1e2f1e7473501cf17c2b0ca
 
 RUN mkdir conf
 COPY cert /app/cert
