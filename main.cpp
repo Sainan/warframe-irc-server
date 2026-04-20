@@ -364,6 +364,11 @@ int main()
 		}
 
 		LoggingIrcServer serv;
+		if (!std::filesystem::is_directory("cert"))
+		{
+			std::cerr << "Could not find a cert folder in the working directory\n";
+			return 1;
+		}
 		auto certstore = soup::make_shared<soup::CertStore>();
 		{
 			soup::X509Certchain certchain;
@@ -378,7 +383,7 @@ int main()
 			|| !serv.bindCrypto(6699, &serv.srv, certstore, &select_ciphersuite)
 			)
 		{
-			std::cout << "Failed to bind to ports 6695-6699\n";
+			std::cerr << "Failed to bind to ports 6695-6699\n";
 			return 1;
 		}
 		std::cout << "Listening for TLS traffic on 6695-6699\n";
